@@ -303,6 +303,36 @@ struct bpf_prog_aux;
 	bpf_size;						\
 })
 
+#define bytes_to_bpf_size(bytes)				\
+({								\
+	int bpf_size = -EINVAL;					\
+								\
+	if (bytes == sizeof(u8))				\
+		bpf_size = BPF_B;				\
+	else if (bytes == sizeof(u16))				\
+		bpf_size = BPF_H;				\
+	else if (bytes == sizeof(u32))				\
+		bpf_size = BPF_W;				\
+	else if (bytes == sizeof(u64))				\
+		bpf_size = BPF_DW;				\
+								\
+	bpf_size;						\
+})
+
+#define BPF_SIZEOF(type)					\
+	({							\
+		const int __size = bytes_to_bpf_size(sizeof(type)); \
+		BUILD_BUG_ON(__size < 0);			\
+		__size;						\
+	})
+
+#define BPF_FIELD_SIZEOF(type, field)				\
+	({							\
+		const int __size = bytes_to_bpf_size(FIELD_SIZEOF(type, field)); \
+		BUILD_BUG_ON(__size < 0);			\
+		__size;						\
+	})
+
 #ifdef CONFIG_COMPAT
 /* A struct sock_filter is architecture independent. */
 struct compat_sock_fprog {
