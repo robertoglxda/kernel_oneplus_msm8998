@@ -125,18 +125,6 @@
  * are set to NOT_INIT to indicate that they are no longer readable.
  */
 
-/* types of values stored in eBPF registers */
-enum bpf_reg_type {
-	NOT_INIT = 0,		 /* nothing was written into register */
-	UNKNOWN_VALUE,		 /* reg doesn't contain a valid pointer */
-	PTR_TO_CTX,		 /* reg points to bpf_context */
-	CONST_PTR_TO_MAP,	 /* reg points to struct bpf_map */
-	PTR_TO_MAP_VALUE,	 /* reg points to map element value */
-	PTR_TO_MAP_VALUE_OR_NULL,/* points to map elem value or NULL */
-	FRAME_PTR,		 /* reg == frame_pointer */
-	PTR_TO_STACK,		 /* reg == frame_pointer + imm */
-	CONST_IMM,		 /* constant integer value */
-};
 
 struct reg_state {
 	enum bpf_reg_type type;
@@ -685,10 +673,10 @@ static int check_map_access(struct verifier_env *env, u32 regno, int off,
 
 /* check access to 'struct bpf_context' fields */
 static int check_ctx_access(struct verifier_env *env, int off, int size,
-			    enum bpf_access_type t)
+			    enum bpf_access_type t, enum bpf_reg_type *reg_type)
 {
 	if (env->prog->aux->ops->is_valid_access &&
-	    env->prog->aux->ops->is_valid_access(off, size, t))
+	    env->prog->aux->ops->is_valid_access(off, size, t, reg_type))
 		return 0;
 
 	verbose("invalid bpf_context access off=%d size=%d\n", off, size);
@@ -753,12 +741,13 @@ static int check_mem_access(struct verifier_env *env, int insn_idx, u32 regno, i
 			mark_reg_unknown_value(state->regs, value_regno);
 
 	} else if (reg->type == PTR_TO_CTX) {
+		enum bpf_reg_type reg_type = UNKNOWN_VALUE;
 		if (t == BPF_WRITE && value_regno >= 0 &&
 		    is_pointer_value(env, value_regno)) {
 			verbose("R%d leaks addr into ctx\n", value_regno);
 			return -EACCES;
 		}
-		err = check_ctx_access(env, off, size, t);
+		err = check_ctx_access(env, off, size, t, &reg_type);
 		if (!err && t == BPF_READ && value_regno >= 0)
 			mark_reg_unknown_value(state->regs, value_regno);
 
