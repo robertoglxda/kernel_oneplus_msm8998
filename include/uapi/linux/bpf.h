@@ -363,6 +363,14 @@ enum bpf_func_id {
 	 */
 	BPF_FUNC_skb_under_cgroup,
 
+	/**
+	 * bpf_get_hash_recalc(skb)
+	 * Retrieve and possibly recalculate skb->hash.
+	 * @skb: pointer to skb
+	 * Return: hash
+	 */
+	BPF_FUNC_get_hash_recalc,
+
 	__BPF_FUNC_MAX_ID,
 };
 
