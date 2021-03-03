@@ -298,6 +298,8 @@ static const struct bpf_func_proto *tracing_func_proto(enum bpf_func_id func_id)
 		return &bpf_get_smp_processor_id_proto;
 	case BPF_FUNC_perf_event_read:
 		return &bpf_perf_event_read_proto;
+	case BPF_FUNC_get_stackid:
+		return &bpf_get_stackid_proto;
 	default:
 		return NULL;
 	}
