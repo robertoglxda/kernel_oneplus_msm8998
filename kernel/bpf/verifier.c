@@ -245,6 +245,8 @@ static const struct {
 	{BPF_MAP_TYPE_PERF_EVENT_ARRAY, BPF_FUNC_perf_event_read},
 	{BPF_MAP_TYPE_PERF_EVENT_ARRAY, BPF_FUNC_perf_event_output},
 	{BPF_MAP_TYPE_STACK_TRACE, BPF_FUNC_get_stackid},
+	{BPF_MAP_TYPE_CGROUP_ARRAY, BPF_FUNC_skb_under_cgroup},
+
 };
 
 static void print_verifier_state(struct verifier_state *state)

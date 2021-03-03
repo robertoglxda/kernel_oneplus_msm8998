@@ -86,6 +86,7 @@ enum bpf_map_type {
 	BPF_MAP_TYPE_PERCPU_HASH,
 	BPF_MAP_TYPE_PERCPU_ARRAY,
 	BPF_MAP_TYPE_STACK_TRACE,
+	BPF_MAP_TYPE_CGROUP_ARRAY,
 };
 
 enum bpf_prog_type {
@@ -349,6 +350,18 @@ enum bpf_func_id {
 	 * Return: 0 on success or negative error
 	 */
 	BPF_FUNC_skb_change_type,
+
+	/**
+	 * bpf_skb_under_cgroup(skb, map, index) - Check cgroup2 membership of skb
+	 * @skb: pointer to skb
+	 * @map: pointer to bpf_map in BPF_MAP_TYPE_CGROUP_ARRAY type
+	 * @index: index of the cgroup in the bpf_map
+	 * Return:
+	 *   == 0 skb failed the cgroup2 descendant test
+	 *   == 1 skb succeeded the cgroup2 descendant test
+	 *    < 0 error
+	 */
+	BPF_FUNC_skb_under_cgroup,
 
 	__BPF_FUNC_MAX_ID,
 };
