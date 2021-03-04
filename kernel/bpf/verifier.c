@@ -130,7 +130,14 @@ struct reg_state {
 	enum bpf_reg_type type;
 	union {
 		/* valid when type == CONST_IMM | PTR_TO_STACK */
-		int imm;
+		s64 imm;
+
+		/* valid when type == PTR_TO_PACKET* */
+		struct {
+			u32 id;
+			u16 off;
+			u16 range;
+		};
 
 		/* valid when type == CONST_PTR_TO_MAP | PTR_TO_MAP_VALUE |
 		 *   PTR_TO_MAP_VALUE_OR_NULL
@@ -197,7 +204,18 @@ struct verifier_env {
 	struct bpf_map *used_maps[MAX_USED_MAPS]; /* array of map's used by eBPF program */
 	u32 used_map_cnt;		/* number of used maps */
 	bool allow_ptr_leaks;
+	bool seen_direct_write;
 	struct bpf_insn_aux_data *insn_aux_data; /* array of per-insn state */
+};
+
+#define BPF_COMPLEXITY_LIMIT_INSNS	65536
+#define BPF_COMPLEXITY_LIMIT_STACK	1024
+struct bpf_call_arg_meta {
+	struct bpf_map *map_ptr;
+	bool raw_mode;
+	bool pkt_access;
+	int regno;
+	int access_size;
 };
 
 /* verbose verifier prints what it's seeing
@@ -717,6 +735,36 @@ static bool is_ctx_reg(struct verifier_env *env, int regno)
 	return reg->type == PTR_TO_CTX;
 }
 
+#define MAX_PACKET_OFF 0xffff
+static bool may_access_direct_pkt_data(struct verifier_env *env,
+                                       const struct bpf_call_arg_meta *meta)
+{
+        switch (env->prog->type) {
+        case BPF_PROG_TYPE_SCHED_CLS:
+        case BPF_PROG_TYPE_SCHED_ACT:
+        case BPF_PROG_TYPE_XDP:
+                if (meta)
+                        return meta->pkt_access;
+                env->seen_direct_write = true;
+                return true;
+        default:
+                return false;
+        }
+}
+static int check_packet_access(struct verifier_env *env, u32 regno, int off,
+                               int size)
+{
+        struct reg_state *regs = env->cur_state.regs;
+        struct reg_state *reg = &regs[regno];
+        off += reg->off;
+        if (off < 0 || size <= 0 || off + size > reg->range) {
+                verbose("invalid access to packet, off=%d size=%d, R%d(id=%d,off=%d,r=%d)\n",
+                        off, size, regno, reg->id, reg->off, reg->range);
+                return -EACCES;
+        }
+        return 0;
+}
+
 /* check whether memory at (regno + off) is accessible for t = (read | write)
  * if t==write, value_regno is a register which value is stored into memory
  * if t==read, value_regno is a register which will receive the value from memory
@@ -781,6 +829,19 @@ static int check_mem_access(struct verifier_env *env, int insn_idx, u32 regno, i
 		} else {
 			err = check_stack_read(state, off, size, value_regno);
 		}
+	} else if (state->regs[regno].type == PTR_TO_PACKET) {
+		if (t == BPF_WRITE && !may_access_direct_pkt_data(env, NULL)) {
+			verbose("cannot write into packet\n");
+			return -EACCES;
+		}
+		if (t == BPF_WRITE && value_regno >= 0 &&
+		    is_pointer_value(env, value_regno)) {
+			verbose("R%d leaks addr into packet\n", value_regno);
+			return -EACCES;
+		}
+		err = check_packet_access(env, regno, off, size);
+		if (!err && t == BPF_READ && value_regno >= 0)
+			mark_reg_unknown_value(state->regs, value_regno);
 	} else {
 		verbose("R%d invalid mem access '%s'\n",
 			regno, reg_type_str[reg->type]);
@@ -2244,18 +2305,34 @@ static void sanitize_dead_code(struct verifier_env *env)
  */
 static int convert_ctx_accesses(struct verifier_env *env)
 {
-	struct bpf_insn *insn = env->prog->insnsi;
-	const int insn_cnt = env->prog->len;
-	struct bpf_insn insn_buf[16];
+	const struct bpf_verifier_ops *ops = env->prog->aux->ops;
+	struct bpf_insn insn_buf[16], *insn;
 	struct bpf_prog *new_prog;
 	enum bpf_access_type type;
-	int i, delta = 0;
+	int i, insn_cnt, cnt, delta = 0;
 
-	if (!env->prog->aux->ops->convert_ctx_access)
-		return 0;
+	if (ops->gen_prologue) {
+		cnt = ops->gen_prologue(insn_buf, env->seen_direct_write,
+					env->prog);
+		if (cnt >= ARRAY_SIZE(insn_buf)) {
+			verbose("bpf verifier is misconfigured\n");
+			return -EINVAL;
+		} else if (cnt) {
+			new_prog = bpf_patch_insn_single(env->prog, 0,
+							 insn_buf, cnt);
+			if (!new_prog)
+				return -ENOMEM;
+			env->prog = new_prog;
+		}
+	}
+
+	if (!ops->convert_ctx_access)
+ 		return 0;
+
+	insn_cnt = env->prog->len;
+	insn = env->prog->insnsi;
 
 	for (i = 0; i < insn_cnt; i++, insn++) {
-		u32 cnt;
 
 		if (insn->code == (BPF_LDX | BPF_MEM | BPF_W) ||
 		    insn->code == (BPF_LDX | BPF_MEM | BPF_DW))
@@ -2297,9 +2374,8 @@ static int convert_ctx_accesses(struct verifier_env *env)
 		if (env->insn_aux_data[i + delta].ptr_type != PTR_TO_CTX)
 			continue;
 
-		cnt = env->prog->aux->ops->
-			convert_ctx_access(type, insn->dst_reg, insn->src_reg,
-					   insn->off, insn_buf, env->prog);
+		cnt = ops->convert_ctx_access(type, insn->dst_reg, insn->src_reg,
+					      insn->off, insn_buf, env->prog);
 		if (cnt == 0 || cnt >= ARRAY_SIZE(insn_buf)) {
 			verbose("bpf verifier is misconfigured\n");
 			return -EINVAL;
