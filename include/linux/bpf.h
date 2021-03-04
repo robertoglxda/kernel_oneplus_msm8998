@@ -201,6 +201,9 @@ struct bpf_array {
 
 u64 bpf_tail_call(u64 ctx, u64 r2, u64 index, u64 r4, u64 r5);
 void bpf_fd_array_map_clear(struct bpf_map *map);
+
+int bpf_get_file_flag(int flags);
+
 bool bpf_prog_array_compatible(struct bpf_array *array, const struct bpf_prog *fp);
 const struct bpf_func_proto *bpf_get_trace_printk_proto(void);
 
@@ -220,11 +223,11 @@ void bpf_map_put(struct bpf_map *map);
 
 extern int sysctl_unprivileged_bpf_disabled;
 
-int bpf_map_new_fd(struct bpf_map *map);
+int bpf_map_new_fd(struct bpf_map *map, int flags);
 int bpf_prog_new_fd(struct bpf_prog *prog);
 
 int bpf_obj_pin_user(u32 ufd, const char __user *pathname);
-int bpf_obj_get_user(const char __user *pathname);
+int bpf_obj_get_user(const char __user *pathname, int flags);
 
 /* verify correctness of eBPF program */
 int bpf_check(struct bpf_prog **fp, union bpf_attr *attr);

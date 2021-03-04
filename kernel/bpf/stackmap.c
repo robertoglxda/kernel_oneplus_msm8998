@@ -10,6 +10,10 @@
 #include <linux/vmalloc.h>
 #include <linux/stacktrace.h>
 #include <linux/perf_event.h>
+
+#define STACK_CREATE_FLAG_MASK \
+	(BPF_F_RDONLY | BPF_F_WRONLY)
+
 struct stack_map_bucket {
 	struct rcu_head rcu;
 	u32 hash;
@@ -30,6 +34,10 @@ static struct bpf_map *stack_map_alloc(union bpf_attr *attr)
 	int err;
 	if (!capable(CAP_SYS_ADMIN))
 		return ERR_PTR(-EPERM);
+
+	if (attr->map_flags & ~STACK_CREATE_FLAG_MASK)
+ 		return ERR_PTR(-EINVAL);
+
 	/* check sanity of attributes */
 	if (attr->max_entries == 0 || attr->key_size != 4 ||
 	    value_size < 8 || value_size % 8 ||

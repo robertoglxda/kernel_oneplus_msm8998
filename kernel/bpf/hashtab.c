@@ -14,6 +14,9 @@
 #include <linux/filter.h>
 #include <linux/vmalloc.h>
 
+#define HTAB_CREATE_FLAG_MASK						\
+	(BPF_F_NO_PREALLOC | BPF_F_RDONLY | BPF_F_WRONLY)
+
 struct bucket {
 	struct hlist_head head;
 	raw_spinlock_t lock;
@@ -53,6 +56,10 @@ static struct bpf_map *htab_map_alloc(union bpf_attr *attr)
 	struct bpf_htab *htab;
 	int err, i;
 	u64 cost;
+
+	if (attr->map_flags & ~HTAB_CREATE_FLAG_MASK)
+		/* reserved bits should not be used */
+		return ERR_PTR(-EINVAL);
 
 	htab = kzalloc(sizeof(*htab), GFP_USER);
 	if (!htab)
