@@ -5887,6 +5887,19 @@ struct cgroup_subsys_state *css_from_id(int id, struct cgroup_subsys *ss)
 	return id > 0 ? idr_find(&ss->css_idr, id) : NULL;
 }
 
+#ifdef CONFIG_CGROUP_BPF
+void cgroup_bpf_update(struct cgroup *cgrp,
+		       struct bpf_prog *prog,
+		       enum bpf_attach_type type)
+{
+	struct cgroup *parent = cgroup_parent(cgrp);
+
+	mutex_lock(&cgroup_mutex);
+	__cgroup_bpf_update(cgrp, parent, prog, type);
+	mutex_unlock(&cgroup_mutex);
+}
+#endif /* CONFIG_CGROUP_BPF */
+
 #ifdef CONFIG_CGROUP_DEBUG
 static struct cgroup_subsys_state *
 debug_css_alloc(struct cgroup_subsys_state *parent_css)
