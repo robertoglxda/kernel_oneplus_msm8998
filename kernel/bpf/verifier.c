@@ -961,7 +961,8 @@ static int check_xadd(struct verifier_env *env, int insn_idx, struct bpf_insn *i
  * and all elements of stack are initialized
  */
 static int check_stack_boundary(struct verifier_env *env, int regno,
-				int access_size, bool zero_size_allowed)
+				int access_size, bool zero_size_allowed,
+				struct bpf_call_arg_meta *meta)
 {
 	struct verifier_state *state = &env->cur_state;
 	struct reg_state *regs = state->regs;
@@ -987,6 +988,13 @@ static int check_stack_boundary(struct verifier_env *env, int regno,
 		return -EACCES;
 	}
 
+	if (meta && meta->raw_mode) {
+		meta->access_size = access_size;
+		meta->regno = regno;
+		printk("bpt: boundary4.0 \n");
+		return 0;
+	}
+
 	for (i = 0; i < access_size; i++) {
 		if (state->stack_slot_type[MAX_BPF_STACK + off + i] != STACK_MISC) {
 			verbose("invalid indirect read from stack off %d+%d size %d\n",
@@ -998,14 +1006,17 @@ static int check_stack_boundary(struct verifier_env *env, int regno,
 }
 
 static int check_func_arg(struct verifier_env *env, u32 regno,
-			  enum bpf_arg_type arg_type, struct bpf_map **mapp)
+			  enum bpf_arg_type arg_type,
+			  struct bpf_call_arg_meta *meta)
 {
 	struct reg_state *reg = env->cur_state.regs + regno;
 	enum bpf_reg_type expected_type;
 	int err = 0;
 
-	if (arg_type == ARG_DONTCARE)
+	if (arg_type == ARG_DONTCARE) {
+		printk("bpt: check_func_arg1\n");
 		return 0;
+	}
 
 	if (reg->type == NOT_INIT) {
 		verbose("R%d !read_ok\n", regno);
@@ -1030,7 +1041,8 @@ static int check_func_arg(struct verifier_env *env, u32 regno,
 		expected_type = CONST_PTR_TO_MAP;
 	} else if (arg_type == ARG_PTR_TO_CTX) {
 		expected_type = PTR_TO_CTX;
-	} else if (arg_type == ARG_PTR_TO_STACK) {
+	} else if (arg_type == ARG_PTR_TO_STACK ||
+		   arg_type == ARG_PTR_TO_RAW_STACK) {
 		expected_type = PTR_TO_STACK;
 		/* One exception here. In case function allows for NULL to be
 		 * passed in as argument, it's a CONST_IMM type. Final test
@@ -1038,6 +1050,7 @@ static int check_func_arg(struct verifier_env *env, u32 regno,
 		 */
 		if (reg->type == CONST_IMM && reg->imm == 0)
 			expected_type = CONST_IMM;
+		meta->raw_mode = arg_type == ARG_PTR_TO_RAW_STACK;
 	} else {
 		verbose("unsupported arg_type %d\n", arg_type);
 		return -EFAULT;
@@ -1051,14 +1064,14 @@ static int check_func_arg(struct verifier_env *env, u32 regno,
 
 	if (arg_type == ARG_CONST_MAP_PTR) {
 		/* bpf_map_xxx(map_ptr) call: remember that map_ptr */
-		*mapp = reg->map_ptr;
+		meta->map_ptr = reg->map_ptr;
 
 	} else if (arg_type == ARG_PTR_TO_MAP_KEY) {
 		/* bpf_map_xxx(..., map_ptr, ..., key) call:
 		 * check that [key, key + map->key_size) are within
 		 * stack limits and initialized
 		 */
-		if (!*mapp) {
+		if (!meta->map_ptr) {
 			/* in function declaration map_ptr must come before
 			 * map_key, so that it's verified and known before
 			 * we have to check map_key here. Otherwise it means
@@ -1067,20 +1080,21 @@ static int check_func_arg(struct verifier_env *env, u32 regno,
 			verbose("invalid map_ptr to access map->key\n");
 			return -EACCES;
 		}
-		err = check_stack_boundary(env, regno, (*mapp)->key_size,
-					   false);
+		err = check_stack_boundary(env, regno, meta->map_ptr->key_size,
+					   false, NULL);
 
 	} else if (arg_type == ARG_PTR_TO_MAP_VALUE) {
 		/* bpf_map_xxx(..., map_ptr, ..., value) call:
 		 * check [value, value + map->value_size) validity
 		 */
-		if (!*mapp) {
+		if (!meta->map_ptr) {
 			/* kernel subsystem misconfigured verifier */
 			verbose("invalid map_ptr to access map->value\n");
 			return -EACCES;
 		}
-		err = check_stack_boundary(env, regno, (*mapp)->value_size,
-					   false);
+		err = check_stack_boundary(env, regno,
+					   meta->map_ptr->value_size,
+					   false, NULL);
 	} else if (arg_type == ARG_CONST_STACK_SIZE ||
 		   arg_type == ARG_CONST_STACK_SIZE_OR_ZERO) {
 		bool zero_size_allowed = (arg_type == ARG_CONST_STACK_SIZE_OR_ZERO);
@@ -1095,7 +1109,7 @@ static int check_func_arg(struct verifier_env *env, u32 regno,
 			return -EACCES;
 		}
 		err = check_stack_boundary(env, regno - 1, reg->imm,
-					   zero_size_allowed);
+					   zero_size_allowed, meta);
 	}
 
 	return err;
