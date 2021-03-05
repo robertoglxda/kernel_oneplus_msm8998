@@ -214,10 +214,13 @@ bool bpf_prog_array_compatible(struct bpf_array *array, const struct bpf_prog *f
 const struct bpf_func_proto *bpf_get_trace_printk_proto(void);
 
 #ifdef CONFIG_BPF_SYSCALL
+DECLARE_PER_CPU(int, bpf_prog_active);
 void bpf_register_prog_type(struct bpf_prog_type_list *tl);
 void bpf_register_map_type(struct bpf_map_type_list *tl);
 
 struct bpf_prog *bpf_prog_get(u32 ufd);
+struct bpf_prog *bpf_prog_get_type(u32 ufd, enum bpf_prog_type type);
+struct bpf_prog *bpf_prog_add(struct bpf_prog *prog, int i);
 struct bpf_prog *bpf_prog_inc(struct bpf_prog *prog);
 void bpf_prog_put(struct bpf_prog *prog);
 
@@ -247,8 +250,22 @@ static inline struct bpf_prog *bpf_prog_get(u32 ufd)
 	return ERR_PTR(-EOPNOTSUPP);
 }
 
+static inline struct bpf_prog *bpf_prog_get_type(u32 ufd,
+						 enum bpf_prog_type type)
+{
+	return ERR_PTR(-EOPNOTSUPP);
+}
+static inline struct bpf_prog *bpf_prog_add(struct bpf_prog *prog, int i)
+{
+	return ERR_PTR(-EOPNOTSUPP);
+}
+
 static inline void bpf_prog_put(struct bpf_prog *prog)
 {
+}
+static inline struct bpf_prog *bpf_prog_inc(struct bpf_prog *prog)
+{
+	return ERR_PTR(-EOPNOTSUPP);
 }
 #endif /* CONFIG_BPF_SYSCALL */
 
@@ -266,6 +283,7 @@ extern const struct bpf_func_proto bpf_get_current_uid_gid_proto;
 extern const struct bpf_func_proto bpf_get_current_comm_proto;
 extern const struct bpf_func_proto bpf_skb_vlan_push_proto;
 extern const struct bpf_func_proto bpf_skb_vlan_pop_proto;
+extern const struct bpf_func_proto bpf_get_stackid_proto;
 
 /* Shared helpers among cBPF and eBPF. */
 void bpf_user_rnd_init_once(void);

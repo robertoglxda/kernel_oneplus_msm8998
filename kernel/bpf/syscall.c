@@ -20,6 +20,8 @@
 
 #define BPF_OBJ_FLAG_MASK   (BPF_F_RDONLY | BPF_F_WRONLY)
 
+DEFINE_PER_CPU(int, bpf_prog_active);
+
 int sysctl_unprivileged_bpf_disabled __read_mostly;
 
 static LIST_HEAD(bpf_map_types);
@@ -596,17 +598,48 @@ int bpf_prog_new_fd(struct bpf_prog *prog)
 				O_RDWR | O_CLOEXEC);
 }
 
-static struct bpf_prog *__bpf_prog_get(struct fd f)
+static struct bpf_prog *____bpf_prog_get(struct fd f)
 {
-	if (!f.file)
-		return ERR_PTR(-EBADF);
-	if (f.file->f_op != &bpf_prog_fops) {
-		fdput(f);
-		return ERR_PTR(-EINVAL);
-	}
-
-	return f.file->private_data;
+        if (!f.file)
+                return ERR_PTR(-EBADF);
+        if (f.file->f_op != &bpf_prog_fops) {
+                fdput(f);
+                return ERR_PTR(-EINVAL);
+        }
+        return f.file->private_data;
 }
+struct bpf_prog *bpf_prog_add(struct bpf_prog *prog, int i)
+{
+        if (atomic_add_return(i, &prog->aux->refcnt) > BPF_MAX_REFCNT) {
+                atomic_sub(i, &prog->aux->refcnt);
+                return ERR_PTR(-EBUSY);
+        }
+        return prog;
+}
+EXPORT_SYMBOL_GPL(bpf_prog_add);
+
+static struct bpf_prog *__bpf_prog_get(u32 ufd, enum bpf_prog_type *type)
+{
+	struct fd f = fdget(ufd);
+	struct bpf_prog *prog;
+	prog = ____bpf_prog_get(f);
+	if (IS_ERR(prog))
+		return prog;
+	if (type && prog->type != *type) {
+		prog = ERR_PTR(-EINVAL);
+		goto out;
+	}
+	prog = bpf_prog_inc(prog);
+out:
+	fdput(f);
+	return prog;
+}
+
+struct bpf_prog *bpf_prog_get_type(u32 ufd, enum bpf_prog_type type)
+{
+	return __bpf_prog_get(ufd, &type);
+}
+EXPORT_SYMBOL_GPL(bpf_prog_get_type);
 
 struct bpf_prog *bpf_prog_inc(struct bpf_prog *prog)
 {
@@ -625,7 +658,7 @@ struct bpf_prog *bpf_prog_get(u32 ufd)
 	struct fd f = fdget(ufd);
 	struct bpf_prog *prog;
 
-	prog = __bpf_prog_get(f);
+	prog = ____bpf_prog_get(f);
 	if (IS_ERR(prog))
 		return prog;
 
