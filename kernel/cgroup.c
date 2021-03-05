@@ -5888,15 +5888,16 @@ struct cgroup_subsys_state *css_from_id(int id, struct cgroup_subsys *ss)
 }
 
 #ifdef CONFIG_CGROUP_BPF
-void cgroup_bpf_update(struct cgroup *cgrp,
-		       struct bpf_prog *prog,
-		       enum bpf_attach_type type)
+int cgroup_bpf_update(struct cgroup *cgrp, struct bpf_prog *prog,
+		      enum bpf_attach_type type, bool overridable)
 {
 	struct cgroup *parent = cgroup_parent(cgrp);
+	int ret;
 
 	mutex_lock(&cgroup_mutex);
-	__cgroup_bpf_update(cgrp, parent, prog, type);
+	ret = __cgroup_bpf_update(cgrp, parent, prog, type, overridable);
 	mutex_unlock(&cgroup_mutex);
+	return ret;
 }
 #endif /* CONFIG_CGROUP_BPF */
 
