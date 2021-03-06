@@ -737,8 +737,7 @@ static int bpf_prog_load(union bpf_attr *attr)
 	/* run eBPF verifier */
 	err = bpf_check(&prog, attr);
 	if (err < 0)
-		goto free_used_maps;
-
+		//goto free_used_maps;
 	/* eBPF program is ready to be JITed */
 	err = bpf_prog_select_runtime(prog);
 	if (err < 0)
